@@ -13,8 +13,6 @@ class Actor(nn.Module):
         self.actor_linear2 = nn.Linear(hidden_size, num_actions)
 
     def forward(self, state):
-        state = Variable(torch.from_numpy(state).float().unsqueeze(0))
-
         policy_dist = F.relu(self.actor_linear1(state))
         policy_dist = F.softmax(self.actor_linear2(policy_dist), dim=1)
 
@@ -28,8 +26,6 @@ class Critic(nn.Module):
         self.critic_linear2 = nn.Linear(hidden_size, 1)
 
     def forward(self,state):
-        state = Variable(torch.from_numpy(state).float().unsqueeze(0))
-
         value = F.relu(self.critic_linear1(state))
         value = self.critic_linear2(value)
 

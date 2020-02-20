@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torch.utils.data import WeightedRandomSampler
 import numpy as np
 import torch.nn
 from .models import Actor, Critic
@@ -8,12 +9,8 @@ import torch.optim as optim
 
 
 class A2cAgent():
-    theta = None
-    theta_v = None
 
-    step_counter = 0
-
-    def __init__(self, env, learning_rate=3e-4, timesteps_max=10, trajectories_max=5, discount_factor=.1):
+    def __init__(self, env, learning_rate=3e-4, timesteps_max=3, trajectories_max=1, discount_factor=.1):
         # initiate theta and theta_v for policy and value function respectively
         self.env = env
         self.learning_rate = learning_rate
@@ -27,115 +24,79 @@ class A2cAgent():
         self.actor_optimizer = optim.Adam(self.actor_model.parameters(), lr=self.learning_rate)
         self.critic_optimizer = optim.Adam(self.critic_model.parameters(), lr=self.learning_rate)
 
-        # self.critic_loss = torch.nn.MSELoss(reduction='sum')
-        # self.critic_loss(input, target).backward()
-
     def train(self):
         for trajectory_index in range(0, self.T_max):
-            self.step_counter = 0
-
-            d_theta = 0
-            d_theta_v = 0
             start_state = self.env.reset()  # Should get start state from some initial state distribution
-            values, actions, rewards, log_probs, terminated, reward_at_time = self.collect_states_and_rewards(
+            trajectory_results = self.iterate_through_single_trajectory(
                 start_state)
+            trajectory_timesteps = len(trajectory_results.values)
 
             # everything below should probably be in an "update" function
 
-            qvals = np.zeros(len(values))
-            for j in range(self.step_counter - 1, 0, -1):
-                reward_at_time = reward_at_time * self.discount_factor + rewards[j]
-                qvals[j] = reward_at_time
-
-                # d_theta = self.get_updated_delta_theta(d_theta, values[j], actions[j], log_probs[j], reward_at_time)
-                # d_theta_v = self.get_updated_delta_theta_v(d_theta_v, values[j], reward_at_time)
+            qvals = torch.zeros(trajectory_timesteps)
+            for j in range(trajectory_timesteps - 1, 0, -1):
+                q_value = trajectory_results.q_value * self.discount_factor + trajectory_results.rewards[j]
+                qvals[j] = q_value
 
             # I will attempt to use an optimizer instead of collecting d_theta
 
             # The following is a snip from cyoon1729
 
-            values = torch.FloatTensor(values)
+            values = torch.cat(trajectory_results.values)
             qvals = torch.FloatTensor(qvals)
-            log_probs = torch.stack(log_probs)
+            log_probs = torch.stack(trajectory_results.log_probs)
 
             advantage = qvals - values
             actor_loss = (-log_probs * advantage).mean()
-            critic_loss = torch.nn.MSELoss(reduction='sum')(qvals, values)
+            critic_loss = advantage.pow(2).mean()
 
             self.actor_optimizer.zero_grad()
-            actor_loss.backward()
+            actor_loss.backward(retain_graph=True)
             self.actor_optimizer.step()
 
             self.critic_optimizer.zero_grad()
             critic_loss.backward()
             self.critic_optimizer.step()
 
-    def get_initial_state(self, isd):
-        pass
-
-    def get_value(self, state):
-        return self.get_value_function(state).sample()
-
-    def collect_states_and_rewards(self, start_state):
+    def iterate_through_single_trajectory(self, start_state):
         values = []
-        actions = []
         rewards = []
         log_probs = []
-        end_value = 0
+        q_value = 0
         done = False
 
         current_state = start_state
-        while (self.step_counter < self.t_max):
-            self.step_counter = self.step_counter + 1
-
+        for step_counter in range(0,self.t_max):
             action, policy_dist, value = self.get_models_output(current_state)
 
             current_state, reward, done, _ = self.env.step(action)
 
             rewards.append(reward)
-            values.append(value)
-            actions.append(action)
-            log_probs.append(torch.log(policy_dist.squeenze(0)[action]))
+            values.append(value.squeeze(0))
+            log_probs.append(torch.log(policy_dist.squeeze(0)[action]))
 
             if (done):
                 break
 
         if (not done):
-            _, _, end_value = self.get_models_output(current_state)
+            _, _, q_value = self.get_models_output(current_state)
 
-        return values, actions, rewards, log_probs, done, end_value
-
-    def step(self):
-        pass
-        # this will probably just be the step function for whatever environment we're operating within
+        return A2cAgent.TrajectoryResults(values, rewards, log_probs, q_value, done)
 
     def get_action(self, policy_dist):
-        return np.random.choice(self.num_out, p=policy_dist.detach().numpy().squeeze(0))
+        return np.random.choice(self.env.action_space.n, p=policy_dist.detach().numpy().squeeze(0))
 
     def get_models_output(self, state):
         state = Variable(torch.from_numpy(state).float().unsqueeze(0))
-        value = self.actor_model.forward(state)
-        policy_dist = self.critic_model.forward(state)
+        policy_dist = self.actor_model.forward(state)
+        value = self.critic_model.forward(state)
 
         return self.get_action(policy_dist), policy_dist, value
 
-    def get_policy(self, state):
-        pass
-
-    def get_value_function(self, state):
-        pass
-
-    def get_updated_delta_theta(self, delta_theta, value, action, log_prob, reward):
-        pass
-
-    def get_updated_delta_theta_v(self, delta_v_theta, value, reward):
-        pass
-
-    # copied straight out of spinning up
-    def mlp(self, sizes=3, activation=nn.Tanh, output_activation=nn.Identity):
-        # Build a feedforward neural network.
-        layers = []
-        for j in range(len(sizes) - 1):
-            act = activation if j < len(sizes) - 2 else output_activation
-            layers += [nn.Linear(sizes[j], sizes[j + 1]), act()]
-        return nn.Sequential(*layers)
+    class TrajectoryResults():
+        def __init__(self, values, rewards, log_probs, q_value, done):
+            self.values = values
+            self.rewards = rewards
+            self.log_probs = log_probs
+            self.q_value = q_value
+            self.done = done
