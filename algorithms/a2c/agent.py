@@ -31,7 +31,7 @@ class A2cAgent():
 
 
 
-            #TODO: break down into update method
+            #TODO: Clean up and further organize
 
             values = torch.cat(trajectory_results.values)
             qvals = torch.FloatTensor(qvals)
