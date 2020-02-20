@@ -1,6 +1,4 @@
 import torch
-import torch.nn as nn
-from torch.utils.data import WeightedRandomSampler
 import numpy as np
 import torch.nn
 from .models import Actor, Critic
@@ -10,7 +8,7 @@ import torch.optim as optim
 
 class A2cAgent():
 
-    def __init__(self, env, learning_rate=3e-4, timesteps_max=3, trajectories_max=1, discount_factor=.1):
+    def __init__(self, env, learning_rate=3e-4, timesteps_max=300, trajectories_max=1500, discount_factor=.1):
         # initiate theta and theta_v for policy and value function respectively
         self.env = env
         self.learning_rate = learning_rate
@@ -29,18 +27,11 @@ class A2cAgent():
             start_state = self.env.reset()  # Should get start state from some initial state distribution
             trajectory_results = self.iterate_through_single_trajectory(
                 start_state)
-            trajectory_timesteps = len(trajectory_results.values)
+            qvals = self.get_qvals(trajectory_results)
 
-            # everything below should probably be in an "update" function
 
-            qvals = torch.zeros(trajectory_timesteps)
-            for j in range(trajectory_timesteps - 1, 0, -1):
-                q_value = trajectory_results.q_value * self.discount_factor + trajectory_results.rewards[j]
-                qvals[j] = q_value
 
-            # I will attempt to use an optimizer instead of collecting d_theta
-
-            # The following is a snip from cyoon1729
+            #TODO: break down into update method
 
             values = torch.cat(trajectory_results.values)
             qvals = torch.FloatTensor(qvals)
@@ -70,6 +61,7 @@ class A2cAgent():
             action, policy_dist, value = self.get_models_output(current_state)
 
             current_state, reward, done, _ = self.env.step(action)
+            self.env.render()
 
             rewards.append(reward)
             values.append(value.squeeze(0))
@@ -92,6 +84,15 @@ class A2cAgent():
         value = self.critic_model.forward(state)
 
         return self.get_action(policy_dist), policy_dist, value
+
+    def get_qvals(self,trajectory_results):
+        trajectory_timesteps = len(trajectory_results.values)
+        qvals = torch.zeros(trajectory_timesteps)
+
+        for j in range(trajectory_timesteps - 1, 0, -1):
+            q_value = trajectory_results.q_value * self.discount_factor + trajectory_results.rewards[j]
+            qvals[j] = q_value
+        return qvals
 
     class TrajectoryResults():
         def __init__(self, values, rewards, log_probs, q_value, done):
