@@ -1,5 +1,6 @@
 import gym
 from .agent import A2cAgent
 
-env_id = "CartPole-v0"
-env = gym.make(env_id)
+
+env = gym.make("CartPole-v0")
+A2cAgent(env).train()
