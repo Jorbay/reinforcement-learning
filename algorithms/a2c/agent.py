@@ -5,6 +5,8 @@ from .models import Actor, Critic
 from torch.autograd import Variable
 import torch.optim as optim
 
+import matplotlib.pyplot as plt
+import pandas as pd
 
 class A2cAgent():
 
@@ -23,6 +25,11 @@ class A2cAgent():
         self.critic_optimizer = optim.Adam(self.critic_model.parameters(), lr=self.learning_rate)
 
     def train(self):
+        all_lengths = []
+        all_rewards = []
+        all_advantages = []
+
+
         for trajectory_index in range(0, self.T_max):
             start_state = self.env.reset()  # Should get start state from some initial state distribution
             trajectory_results = self.iterate_through_single_trajectory(
@@ -49,6 +56,38 @@ class A2cAgent():
             critic_loss.backward()
             self.critic_optimizer.step()
 
+            all_lengths.append(len(trajectory_results.values))
+            all_rewards.append(sum(trajectory_results.rewards))
+            all_advantages.append(sum(advantage))
+
+
+        # Plot results; from https://towardsdatascience.com/understanding-actor-critic-methods-931b97b6df3f
+        #smoothed_rewards = pd.Series.rolling(pd.Series(all_rewards), 10).mean()
+        #smoothed_rewards = [elem for elem in smoothed_rewards]
+        #plt.plot(all_rewards)
+        #plt.plot(smoothed_rewards)
+        #plt.plot()
+        #plt.xlabel('Episode')
+        #plt.ylabel('Reward')
+        #plt.show()
+
+        fig, axs = plt.subplots(3)
+        fig.suptitle('x,y,z over # of trajectories')
+
+        axs[0].plot(all_lengths)
+        axs[0].set_ylabel("lengths of trajectories")
+
+        axs[1].plot(all_rewards)
+        axs[1].set_ylabel("rewards of trajectories")
+
+        axs[2].plot(all_advantages)
+        axs[2].set_ylabel("advantages of trajectory")
+
+        plt.show()
+
+
+
+
     def iterate_through_single_trajectory(self, start_state):
         values = []
         rewards = []
@@ -61,7 +100,7 @@ class A2cAgent():
             action, policy_dist, value = self.get_models_output(current_state)
 
             current_state, reward, done, _ = self.env.step(action)
-            self.env.render()
+            #self.env.render()
 
             rewards.append(reward)
             values.append(value.squeeze(0))
@@ -88,9 +127,10 @@ class A2cAgent():
     def get_qvals(self,trajectory_results):
         trajectory_timesteps = len(trajectory_results.values)
         qvals = torch.zeros(trajectory_timesteps)
+        q_value = trajectory_results.q_value
 
-        for j in range(trajectory_timesteps - 1, 0, -1):
-            q_value = trajectory_results.q_value * self.discount_factor + trajectory_results.rewards[j]
+        for j in range(trajectory_timesteps - 1, -1, -1):
+            q_value = q_value * self.discount_factor + trajectory_results.rewards[j]
             qvals[j] = q_value
         return qvals
 
