@@ -2,21 +2,22 @@ import torch
 import numpy as np
 import torch.nn
 from .models import Actor, Critic
+from .plotter import Plotter
 from torch.autograd import Variable
 import torch.optim as optim
 
-import matplotlib.pyplot as plt
-import pandas as pd
-
 class A2cAgent():
 
-    def __init__(self, env, learning_rate=3e-4, timesteps_max=300, trajectories_max=1500, discount_factor=.1):
+    def __init__(self, env, learning_rate=3e-4, timesteps_max=300, trajectories_max=1500, discount_factor=.1, entropy_factor = .001):
         # initiate theta and theta_v for policy and value function respectively
         self.env = env
         self.learning_rate = learning_rate
         self.t_max = timesteps_max
         self.T_max = trajectories_max
         self.discount_factor = discount_factor
+        self.entropy_factor = entropy_factor
+
+        self.entropy_term = 0
 
         self.actor_model = Actor(self.env.observation_space.shape[0], self.env.action_space.n)
         self.critic_model = Critic(self.env.observation_space.shape[0])
@@ -29,64 +30,41 @@ class A2cAgent():
         all_rewards = []
         all_advantages = []
 
-
         for trajectory_index in range(0, self.T_max):
             start_state = self.env.reset()  # Should get start state from some initial state distribution
             trajectory_results = self.iterate_through_single_trajectory(
                 start_state)
             qvals = self.get_qvals(trajectory_results)
 
-
-
-            #TODO: Clean up and further organize
-
             values = torch.cat(trajectory_results.values)
             qvals = torch.FloatTensor(qvals)
             log_probs = torch.stack(trajectory_results.log_probs)
 
-            advantage = qvals - values
-            actor_loss = (-log_probs * advantage).mean()
-            critic_loss = advantage.pow(2).mean()
-
-            self.actor_optimizer.zero_grad()
-            actor_loss.backward(retain_graph=True)
-            self.actor_optimizer.step()
-
-            self.critic_optimizer.zero_grad()
-            critic_loss.backward()
-            self.critic_optimizer.step()
+            self.update(qvals, values, log_probs)
 
             all_lengths.append(len(trajectory_results.values))
             all_rewards.append(sum(trajectory_results.rewards))
-            all_advantages.append(sum(advantage))
+            all_advantages.append(sum(qvals - values))
+
+        plotter = Plotter()
+        plotter.add_variable(all_lengths, "length of trajectories")
+        plotter.add_variable(all_rewards, "rewards of trajectories")
+        plotter.add_variable(all_advantages, "advantage function values of trajectories")
+        plotter.plot()
 
 
-        # Plot results; from https://towardsdatascience.com/understanding-actor-critic-methods-931b97b6df3f
-        #smoothed_rewards = pd.Series.rolling(pd.Series(all_rewards), 10).mean()
-        #smoothed_rewards = [elem for elem in smoothed_rewards]
-        #plt.plot(all_rewards)
-        #plt.plot(smoothed_rewards)
-        #plt.plot()
-        #plt.xlabel('Episode')
-        #plt.ylabel('Reward')
-        #plt.show()
+    def update(self, qvals, values, log_probs):
+        advantage = qvals - values
+        actor_loss = (-log_probs * advantage).mean() + self.entropy_term*self.entropy_factor
+        critic_loss = advantage.pow(2).mean()
 
-        fig, axs = plt.subplots(3)
-        fig.suptitle('x,y,z over # of trajectories')
+        self.actor_optimizer.zero_grad()
+        actor_loss.backward(retain_graph=True)
+        self.actor_optimizer.step()
 
-        axs[0].plot(all_lengths)
-        axs[0].set_ylabel("lengths of trajectories")
-
-        axs[1].plot(all_rewards)
-        axs[1].set_ylabel("rewards of trajectories")
-
-        axs[2].plot(all_advantages)
-        axs[2].set_ylabel("advantages of trajectory")
-
-        plt.show()
-
-
-
+        self.critic_optimizer.zero_grad()
+        critic_loss.backward()
+        self.critic_optimizer.step()
 
     def iterate_through_single_trajectory(self, start_state):
         values = []
@@ -98,9 +76,10 @@ class A2cAgent():
         current_state = start_state
         for step_counter in range(0,self.t_max):
             action, policy_dist, value = self.get_models_output(current_state)
-
             current_state, reward, done, _ = self.env.step(action)
-            #self.env.render()
+
+            policy_dist_detached= policy_dist.detach()
+            self.entropy_term = -torch.sum(torch.mean(policy_dist_detached) * torch.log(policy_dist_detached)) + self.entropy_term
 
             rewards.append(reward)
             values.append(value.squeeze(0))
