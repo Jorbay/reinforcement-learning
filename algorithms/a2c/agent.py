@@ -33,7 +33,7 @@ class A2cAgent():
         all_rewards = []
         all_advantages = []
 
-        for trajectory_index in range(0, self.number_of_batches):
+        for batch_index in range(0, self.number_of_batches):
 
             values = torch.FloatTensor()
             qvals = torch.FloatTensor()
@@ -57,8 +57,6 @@ class A2cAgent():
                 all_rewards.append(sum(trajectory_results.rewards))
                 all_advantages.append(sum(current_qvals - torch.cat(trajectory_results.values)))
 
-
-            #don't run the following until batch size meets minimum_batch_size
             self.update(qvals, values, log_probs)
 
         plotter = Plotter()
@@ -69,8 +67,9 @@ class A2cAgent():
 
 
     def update(self, qvals, values, log_probs):
+
         advantage = qvals - values
-        actor_loss = (-log_probs * advantage).mean() + self.entropy_term*self.entropy_factor
+        actor_loss = (-log_probs * advantage.detach()).mean() - self.entropy_term*self.entropy_factor
         critic_loss = advantage.pow(2).mean()
 
         self.actor_optimizer.zero_grad()
@@ -94,7 +93,8 @@ class A2cAgent():
             current_state, reward, done, _ = self.env.step(action)
 
             policy_dist_detached= policy_dist.detach()
-            self.entropy_term = -torch.sum(torch.mean(policy_dist_detached) * torch.log(policy_dist_detached)) + self.entropy_term
+            self.entropy_term = -torch.sum(torch.mean(policy_dist_detached) * torch.log(policy_dist_detached)) \
+                                + self.entropy_term
 
             rewards.append(reward)
             values.append(value.squeeze(0))

@@ -28,4 +28,3 @@ class Critic(nn.Module):
         value = self.critic_linear2(value)
 
         return value
-#Lifted from cyoon1729; https://github.com/cyoon1729/Reinforcement-learning/blob/master/old_implementations/A2C/model.py
