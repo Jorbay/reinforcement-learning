@@ -1,8 +1,8 @@
 import torch
 import numpy as np
 import torch.nn
-from .models import Actor, Critic
-from .plotter import Plotter
+from models import Actor, Critic
+from plotter import Plotter
 from torch.autograd import Variable
 import torch.optim as optim
 import gym
