@@ -5,12 +5,13 @@ from .models import Actor, Critic
 from .plotter import Plotter
 from torch.autograd import Variable
 import torch.optim as optim
+import gym
 
 class A2cAgent():
 
-    def __init__(self, env, learning_rate=3e-4, timesteps_max=300, trajectories_max=1500, discount_factor=.1, entropy_factor = .001):
+    def __init__(self, env_name, learning_rate, timesteps_max, trajectories_max, discount_factor, entropy_factor):
         # initiate theta and theta_v for policy and value function respectively
-        self.env = env
+        self.env = gym.make(env_name)
         self.learning_rate = learning_rate
         self.t_max = timesteps_max
         self.T_max = trajectories_max
@@ -120,3 +121,18 @@ class A2cAgent():
             self.log_probs = log_probs
             self.q_value = q_value
             self.done = done
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--env_name', type=str, default='CartPole-v0')
+    parser.add_argument('--learning_rate', type=float, default=3e-4)
+    parser.add_argument('--timesteps_max', type=int, default=300)
+    parser.add_argument('--trajectories_max', type=int, default=1500)
+    parser.add_argument('--discount_factor', type=float, default=0.1)
+    parser.add_argument('--entropy_factor', type=float, default = 0.001)
+
+    args = parser.parse_args()
+
+    A2cAgent(args.env_name, args.learning_rate, args.timesteps_max, args.trajectories_max, args.discount_factor,
+             args.entropy_factor).train()
