@@ -9,14 +9,16 @@ import gym
 
 class A2cAgent():
 
-    def __init__(self, env_name, learning_rate, timesteps_max, trajectories_max, discount_factor, entropy_factor):
+    def __init__(self, env_name, learning_rate, timesteps_max, number_of_batches, discount_factor, entropy_factor,
+                 minimum_batch_size):
         # initiate theta and theta_v for policy and value function respectively
         self.env = gym.make(env_name)
         self.learning_rate = learning_rate
         self.t_max = timesteps_max
-        self.T_max = trajectories_max
+        self.number_of_batches = number_of_batches
         self.discount_factor = discount_factor
         self.entropy_factor = entropy_factor
+        self.minimum_batch_size = minimum_batch_size
 
         self.entropy_term = 0
 
@@ -31,21 +33,33 @@ class A2cAgent():
         all_rewards = []
         all_advantages = []
 
-        for trajectory_index in range(0, self.T_max):
-            start_state = self.env.reset()  # Should get start state from some initial state distribution
-            trajectory_results = self.iterate_through_single_trajectory(
-                start_state)
-            qvals = self.get_qvals(trajectory_results)
+        for trajectory_index in range(0, self.number_of_batches):
 
-            values = torch.cat(trajectory_results.values)
-            qvals = torch.FloatTensor(qvals)
-            log_probs = torch.stack(trajectory_results.log_probs)
+            values = torch.FloatTensor()
+            qvals = torch.FloatTensor()
+            log_probs = torch.FloatTensor()
+            total_steps = 0
 
+            while (total_steps < self.minimum_batch_size):
+                start_state = self.env.reset()
+                trajectory_results = self.iterate_through_single_trajectory(
+                    start_state)
+                current_qvals = self.get_qvals(trajectory_results)
+
+                values = torch.cat((torch.cat(trajectory_results.values), values), 0)
+                qvals = torch.cat((torch.FloatTensor(current_qvals), qvals), 0)
+                log_probs = torch.cat((torch.stack(trajectory_results.log_probs), log_probs), 0)
+
+                number_of_steps = len(trajectory_results.values)
+
+                total_steps = total_steps + number_of_steps
+                all_lengths.append(number_of_steps)
+                all_rewards.append(sum(trajectory_results.rewards))
+                all_advantages.append(sum(current_qvals - torch.cat(trajectory_results.values)))
+
+
+            #don't run the following until batch size meets minimum_batch_size
             self.update(qvals, values, log_probs)
-
-            all_lengths.append(len(trajectory_results.values))
-            all_rewards.append(sum(trajectory_results.rewards))
-            all_advantages.append(sum(qvals - values))
 
         plotter = Plotter()
         plotter.add_variable(all_lengths, "length of trajectories")
@@ -128,11 +142,12 @@ if __name__ == '__main__':
     parser.add_argument('--env_name', type=str, default='CartPole-v0')
     parser.add_argument('--learning_rate', type=float, default=3e-4)
     parser.add_argument('--timesteps_max', type=int, default=300)
-    parser.add_argument('--trajectories_max', type=int, default=1500)
+    parser.add_argument('--number_of_batches', type=int, default=200)
     parser.add_argument('--discount_factor', type=float, default=0.1)
     parser.add_argument('--entropy_factor', type=float, default = 0.001)
+    parser.add_argument('--minimum_batch_size', type=int, default = 200)
 
     args = parser.parse_args()
 
-    A2cAgent(args.env_name, args.learning_rate, args.timesteps_max, args.trajectories_max, args.discount_factor,
-             args.entropy_factor).train()
+    A2cAgent(args.env_name, args.learning_rate, args.timesteps_max, args.number_of_batches, args.discount_factor,
+             args.entropy_factor, args.minimum_batch_size).train()
