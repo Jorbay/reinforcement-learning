@@ -37,7 +37,7 @@ class A2cAgent():
         for batch_index in range(0, self.number_of_batches):
 
             values = torch.FloatTensor()
-            qvals = torch.FloatTensor()
+            value_targets = torch.FloatTensor()
             log_probs = torch.FloatTensor()
             total_steps = 0
             self.entropy_term = 0
@@ -46,10 +46,10 @@ class A2cAgent():
                 start_state = self.env.reset()
                 trajectory_results = self.iterate_through_single_trajectory(
                     start_state)
-                current_qvals = self.get_qvals(trajectory_results)
+                current_value_targets = self.get_value_targets(trajectory_results)
 
                 values = torch.cat((torch.cat(trajectory_results.values), values), 0)
-                qvals = torch.cat((torch.FloatTensor(current_qvals), qvals), 0)
+                value_targets = torch.cat((torch.FloatTensor(current_value_targets), value_targets), 0)
                 log_probs = torch.cat((torch.stack(trajectory_results.log_probs), log_probs), 0)
 
                 number_of_steps = len(trajectory_results.values)
@@ -57,9 +57,9 @@ class A2cAgent():
                 total_steps = total_steps + number_of_steps
                 all_lengths.append(number_of_steps)
                 all_rewards.append(sum(trajectory_results.rewards))
-                all_advantages.append(sum(current_qvals - torch.cat(trajectory_results.values)))
+                all_advantages.append(sum(current_value_targets - torch.cat(trajectory_results.values)))
 
-            self.update(qvals, values, log_probs)
+            self.update(value_targets, values, log_probs)
 
         plotter = Plotter()
         plotter.add_variable(all_lengths, "length of trajectories")
@@ -68,14 +68,11 @@ class A2cAgent():
         plotter.plot()
 
 
-    def update(self, qvals, values, log_probs):
+    def update(self, value_targets, values, log_probs):
 
-        advantage = qvals - values
-        actor_loss = (-log_probs * advantage.detach()).mean() - self.entropy_term*self.entropy_factor
+        advantage = value_targets - values
+        actor_loss = -(log_probs * advantage.detach()).sum() - self.entropy_term*self.entropy_factor
         critic_loss = advantage.pow(2).mean()
-
-        #print("The current entropy term is ")
-        #print(self.entropy_term)
 
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
@@ -89,7 +86,7 @@ class A2cAgent():
         values = []
         rewards = []
         log_probs = []
-        q_value = 0
+        final_return = 0
         done = False
 
         current_state = start_state
@@ -109,12 +106,12 @@ class A2cAgent():
                 break
 
         if (not done):
-            _, _, q_value = self.get_models_output(current_state)
+            _, _, final_return = self.get_models_output(current_state)
 
-        return A2cAgent.TrajectoryResults(values, rewards, log_probs, q_value, done)
+        return A2cAgent.TrajectoryResults(values, rewards, log_probs, final_return, done)
 
     def get_action(self, policy_dist):
-        return np.random.choice(self.env.action_space.n, p=policy_dist.numpy().squeeze(0))
+        return np.random.choice(self.env.action_space.n, p=policy_dist.detach().numpy().squeeze(0))
 
     def get_models_output(self, state):
         state = Variable(torch.from_numpy(state).float().unsqueeze(0))
@@ -123,22 +120,22 @@ class A2cAgent():
 
         return self.get_action(policy_dist), policy_dist, value
 
-    def get_qvals(self,trajectory_results):
+    def get_value_targets(self, trajectory_results):
         trajectory_timesteps = len(trajectory_results.values)
-        qvals = torch.zeros(trajectory_timesteps)
-        q_value = trajectory_results.q_value
+        value_targets = torch.zeros(trajectory_timesteps)
+        current_return = trajectory_results.final_return
 
         for j in range(trajectory_timesteps - 1, -1, -1):
-            q_value = q_value * self.discount_factor + trajectory_results.rewards[j]
-            qvals[j] = q_value
-        return qvals
+            current_return = current_return * self.discount_factor + trajectory_results.rewards[j]
+            value_targets[j] = current_return
+        return value_targets
 
     class TrajectoryResults():
-        def __init__(self, values, rewards, log_probs, q_value, done):
+        def __init__(self, values, rewards, log_probs, final_return, done):
             self.values = values
             self.rewards = rewards
             self.log_probs = log_probs
-            self.q_value = q_value
+            self.final_return = final_return
             self.done = done
 
 if __name__ == '__main__':
