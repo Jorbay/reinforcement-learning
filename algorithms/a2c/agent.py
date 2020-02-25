@@ -9,7 +9,7 @@ import gym
 
 class A2cAgent():
 
-    def __init__(self, env_name, learning_rate, timesteps_max, number_of_batches, discount_factor, entropy_factor,
+    def __init__(self, env_name, learning_rate, timesteps_max, number_of_batches, discount_factor, entropy_constant,
                  minimum_batch_size):
         self.env = gym.make(env_name)
         self.env.seed(1)
@@ -18,10 +18,8 @@ class A2cAgent():
         self.t_max = timesteps_max
         self.number_of_batches = number_of_batches
         self.discount_factor = discount_factor
-        self.entropy_factor = entropy_factor
+        self.entropy_constant = entropy_constant
         self.minimum_batch_size = minimum_batch_size
-
-        self.entropy_term = 0
 
         self.actor_model = Actor(self.env.observation_space.shape[0], self.env.action_space.n)
         self.critic_model = Critic(self.env.observation_space.shape[0])
@@ -71,7 +69,7 @@ class A2cAgent():
     def update(self, value_targets, values, log_probs):
 
         advantage = value_targets - values
-        actor_loss = -(log_probs * advantage.detach()).sum() - self.entropy_term*self.entropy_factor
+        actor_loss = -(log_probs * advantage.detach()).sum() - self.entropy_term*self.entropy_constant
         critic_loss = advantage.pow(2).mean()
 
         self.actor_optimizer.zero_grad()
@@ -93,10 +91,6 @@ class A2cAgent():
         for step_counter in range(0,self.t_max):
             action, policy_dist, value = self.get_models_output(current_state)
             current_state, reward, done, _ = self.env.step(action)
-
-            policy_dist_detached = policy_dist.detach()
-            self.entropy_term = -torch.sum(torch.mean(policy_dist_detached) * torch.log(policy_dist_detached)) \
-                                + self.entropy_term
 
             rewards.append(reward)
             values.append(value.squeeze(0))
@@ -146,10 +140,10 @@ if __name__ == '__main__':
     parser.add_argument('--timesteps_max', type=int, default=300)
     parser.add_argument('--number_of_batches', type=int, default=200)
     parser.add_argument('--discount_factor', type=float, default=0.1)
-    parser.add_argument('--entropy_factor', type=float, default = 0.001)
+    parser.add_argument('--entropy_constant', type=float, default = 0.001)
     parser.add_argument('--minimum_batch_size', type=int, default = 200)
 
     args = parser.parse_args()
 
     A2cAgent(args.env_name, args.learning_rate, args.timesteps_max, args.number_of_batches, args.discount_factor,
-             args.entropy_factor, args.minimum_batch_size).train()
+             args.entropy_constant, args.minimum_batch_size).train()
