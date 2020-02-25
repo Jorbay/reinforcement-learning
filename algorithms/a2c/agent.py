@@ -11,8 +11,9 @@ class A2cAgent():
 
     def __init__(self, env_name, learning_rate, timesteps_max, number_of_batches, discount_factor, entropy_factor,
                  minimum_batch_size):
-        # initiate theta and theta_v for policy and value function respectively
         self.env = gym.make(env_name)
+        self.env.seed(1)
+
         self.learning_rate = learning_rate
         self.t_max = timesteps_max
         self.number_of_batches = number_of_batches
@@ -39,6 +40,7 @@ class A2cAgent():
             qvals = torch.FloatTensor()
             log_probs = torch.FloatTensor()
             total_steps = 0
+            self.entropy_term = 0
 
             while (total_steps < self.minimum_batch_size):
                 start_state = self.env.reset()
@@ -61,8 +63,8 @@ class A2cAgent():
 
         plotter = Plotter()
         plotter.add_variable(all_lengths, "length of trajectories")
-        plotter.add_variable(all_rewards, "rewards of trajectories")
-        plotter.add_variable(all_advantages, "advantage function values of trajectories")
+        plotter.add_variable(all_rewards, "total rewards of trajectories")
+        plotter.add_variable(all_advantages, "total advantage function values of trajectories")
         plotter.plot()
 
 
@@ -72,8 +74,11 @@ class A2cAgent():
         actor_loss = (-log_probs * advantage.detach()).mean() - self.entropy_term*self.entropy_factor
         critic_loss = advantage.pow(2).mean()
 
+        #print("The current entropy term is ")
+        #print(self.entropy_term)
+
         self.actor_optimizer.zero_grad()
-        actor_loss.backward(retain_graph=True)
+        actor_loss.backward()
         self.actor_optimizer.step()
 
         self.critic_optimizer.zero_grad()
@@ -92,7 +97,7 @@ class A2cAgent():
             action, policy_dist, value = self.get_models_output(current_state)
             current_state, reward, done, _ = self.env.step(action)
 
-            policy_dist_detached= policy_dist.detach()
+            policy_dist_detached = policy_dist.detach()
             self.entropy_term = -torch.sum(torch.mean(policy_dist_detached) * torch.log(policy_dist_detached)) \
                                 + self.entropy_term
 
@@ -109,7 +114,7 @@ class A2cAgent():
         return A2cAgent.TrajectoryResults(values, rewards, log_probs, q_value, done)
 
     def get_action(self, policy_dist):
-        return np.random.choice(self.env.action_space.n, p=policy_dist.detach().numpy().squeeze(0))
+        return np.random.choice(self.env.action_space.n, p=policy_dist.numpy().squeeze(0))
 
     def get_models_output(self, state):
         state = Variable(torch.from_numpy(state).float().unsqueeze(0))
