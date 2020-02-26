@@ -93,6 +93,7 @@ class A2cAgent():
 
 
         current_state = self.env.reset()
+
         for step_counter in range(0, self.t_max):
             action = self.get_action_from_actor(current_state)
             next_state, reward, done, _ = self.env.step(action)
@@ -120,7 +121,7 @@ class A2cAgent():
         return policy_dists
 
     def get_action_from_actor(self, state):
-        return self.get_action(self.get_actor_output(state))
+        return self.get_action(self.get_actor_output(np.expand_dims(state, axis=0)))
 
     def get_critic_output(self, state):
         state = Variable(torch.from_numpy(state).float().unsqueeze(0))
