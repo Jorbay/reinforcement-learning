@@ -45,9 +45,9 @@ class A2cAgent():
             rollout = self.get_rollout()
 
             # get log probabilities
+            log_probs = self.get_log_probs(rollout)
 
             # get value function output
-            log_probs = self.get_log_probs(rollout)
 
             # get value targets
             value_targets = self.get_value_targets(rollout)
