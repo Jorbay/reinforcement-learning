@@ -10,6 +10,8 @@ class A2cAgent():
 
     def __init__(self, env_name, learning_rate, timesteps_max, number_of_batches, discount_factor, entropy_constant,
                  minimum_batch_size):
+
+        self.device = torch.device("Tesla K80" if torch.cuda.is_available() else "cpu")
         self.env = gym.make(env_name)
         self.env.seed(1)
 
@@ -112,7 +114,7 @@ class A2cAgent():
         return np.random.choice(self.env.action_space.n, p=policy_dist.detach().numpy().squeeze(0))
 
     def get_actor_output(self, states):
-        states = torch.FloatTensor(states)
+        states = torch.FloatTensor(states).to(self.device)
         policy_dists = self.actor_model.forward(states)
         return policy_dists
 
@@ -120,7 +122,7 @@ class A2cAgent():
         return self.get_action(self.get_actor_output(np.expand_dims(state, axis=0)))
 
     def get_critic_output(self, states):
-        states = torch.FloatTensor(states)
+        states = torch.FloatTensor(states).to(self.device)
         value = self.critic_model.forward(states)
 
         return value
@@ -140,13 +142,13 @@ class A2cAgent():
 
             previous_reward = current_reward
 
-        return value_targets
+        return value_targets.to(self.device)
 
     def get_log_probabilities_of_actions(self, states, actions):
 
         policy_distributions = self.get_actor_output(states)
 
-        actions_tensor = torch.LongTensor(list(map(lambda el:[el], actions)))
+        actions_tensor = torch.LongTensor(list(map(lambda el:[el], actions))).to(self.device)
         action_probabilities = torch.gather(policy_distributions, 1, actions_tensor)
         log_probs = torch.log(action_probabilities)
 
