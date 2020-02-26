@@ -114,10 +114,10 @@ class A2cAgent():
     def get_action(self, policy_dist):
         return np.random.choice(self.env.action_space.n, p=policy_dist.detach().numpy().squeeze(0))
 
-    def get_actor_output(self, state):
-        state = Variable(torch.from_numpy(state).float().unsqueeze(0))
-        policy_dist = self.actor_model.forward(state)
-        return policy_dist
+    def get_actor_output(self, states):
+        states = torch.FloatTensor(states)
+        policy_dists = self.actor_model.forward(states)
+        return policy_dists
 
     def get_action_from_actor(self, state):
         return self.get_action(self.get_actor_output(state))
@@ -146,12 +146,12 @@ class A2cAgent():
         return value_targets
 
     def get_log_probabilities_of_actions(self, states, actions):
-        number_of_timesteps = len(states)
-        log_probs = torch.zeros(number_of_timesteps)
 
-        for j in range(0, number_of_timesteps):
-            policy_distribution = self.get_actor_output(states[j])
-            log_probs[j] = torch.log(policy_distribution.squeeze(0)[actions[j]])
+        policy_distributions = self.get_actor_output(states)
+
+        actions_tensor = torch.LongTensor(list(map(lambda el:[el], actions)))
+        action_probabilities = torch.gather(policy_distributions, 1, actions_tensor)
+        log_probs = torch.log(action_probabilities)
 
         return log_probs
 
