@@ -6,6 +6,7 @@ from plotter import Plotter
 from torch.autograd import Variable
 import torch.optim as optim
 import gym
+import statistics
 
 class A2cAgent():
 
@@ -28,9 +29,8 @@ class A2cAgent():
         self.critic_optimizer = optim.Adam(self.critic_model.parameters(), lr=self.learning_rate)
 
     def train(self):
-        all_lengths = []
-        all_rewards = []
-        all_advantages = []
+        rewards_buffer = []
+        average_rewards = []
 
         for batch_index in range(0, self.number_of_batches):
 
@@ -40,29 +40,29 @@ class A2cAgent():
             total_steps = 0
             self.entropy_term = 0
 
-            while (total_steps < self.minimum_batch_size):
-                start_state = self.env.reset()
-                trajectory_results = self.iterate_through_single_trajectory(
-                    start_state)
-                current_value_targets = self.get_value_targets(trajectory_results)
+            start_state = self.env.reset()
+            trajectory_results = self.iterate_through_single_trajectory(
+                start_state)
+            current_value_targets = self.get_value_targets(trajectory_results)
 
-                values = torch.cat((torch.cat(trajectory_results.values), values), 0)
-                value_targets = torch.cat((torch.FloatTensor(current_value_targets), value_targets), 0)
-                log_probs = torch.cat((torch.stack(trajectory_results.log_probs), log_probs), 0)
+            values = torch.cat((torch.cat(trajectory_results.values), values), 0)
+            value_targets = torch.cat((torch.FloatTensor(current_value_targets), value_targets), 0)
+            log_probs = torch.cat((torch.stack(trajectory_results.log_probs), log_probs), 0)
 
-                number_of_steps = len(trajectory_results.values)
+            rewards_buffer.append(sum(trajectory_results.rewards))
 
-                total_steps = total_steps + number_of_steps
-                all_lengths.append(number_of_steps)
-                all_rewards.append(sum(trajectory_results.rewards))
-                all_advantages.append(sum(current_value_targets - torch.cat(trajectory_results.values)))
+            if (batch_index % 100 == 0):
+                average_rewards.append(statistics.mean(rewards_buffer))
+                print("At " + str(batch_index) + "th episode, the last 100 episodes had an average total return of ")
+                print(average_rewards[-1])
+                rewards_buffer = []
+
 
             self.update(value_targets, values, log_probs)
 
         plotter = Plotter()
-        plotter.add_variable(all_lengths, "length of trajectories")
-        plotter.add_variable(all_rewards, "total rewards of trajectories")
-        plotter.add_variable(all_advantages, "total advantage function values of trajectories")
+        plotter.add_variable(average_rewards, "average reward every 100 trajectories")
+        plotter.add_variable(average_rewards, "average reward every 100 trajectories")
         plotter.plot()
 
 
@@ -113,6 +113,13 @@ class A2cAgent():
         value = self.critic_model.forward(state)
 
         return self.get_action(policy_dist), policy_dist, value
+
+    def get_actor_output(self,state):
+        state = Variable(torch.from_numpy(state).float().unsqueeze(0))
+        policy_dist = self.actor_model.forward(state)
+        return self.get_action(policy_dist)
+
+
 
     def get_value_targets(self, trajectory_results):
         trajectory_timesteps = len(trajectory_results.values)
