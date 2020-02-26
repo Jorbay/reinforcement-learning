@@ -123,9 +123,9 @@ class A2cAgent():
     def get_action_from_actor(self, state):
         return self.get_action(self.get_actor_output(np.expand_dims(state, axis=0)))
 
-    def get_critic_output(self, state):
-        state = Variable(torch.from_numpy(state).float().unsqueeze(0))
-        value = self.critic_model.forward(state)
+    def get_critic_output(self, states):
+        states = torch.FloatTensor(states)
+        value = self.critic_model.forward(states)
 
         return value
 
@@ -137,7 +137,7 @@ class A2cAgent():
         previous_reward = None
         for j in range(number_of_timesteps - 1, -1, -1):
             if (dones[j] or (j == number_of_timesteps - 1)):
-                previous_reward = self.get_critic_output(states[j])
+                previous_reward = self.get_critic_output(np.expand_dims(states[j], axis=0))
 
             current_reward = rewards[j]
             value_targets[j] = previous_reward * self.discount_factor + current_reward
@@ -157,14 +157,7 @@ class A2cAgent():
         return log_probs
 
     def get_values(self, states):
-        number_of_timesteps = len(states)
-        values = torch.zeros(number_of_timesteps)
-
-        for j in range(0, number_of_timesteps):
-            values[j] = self.get_critic_output(states[j])
-
-        return values
-
+        return self.get_critic_output(states)
 
     class RolloutEnums(IntEnum):
         STATE = 0
