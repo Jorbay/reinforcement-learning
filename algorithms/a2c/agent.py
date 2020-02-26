@@ -1,14 +1,10 @@
-from enum import Enum, IntEnum
-
 import torch
 import numpy as np
 import torch.nn
 from models import Actor, Critic
 from plotter import Plotter
-from torch.autograd import Variable
 import torch.optim as optim
 import gym
-import statistics
 
 class A2cAgent():
 
@@ -158,10 +154,3 @@ class A2cAgent():
 
     def get_values(self, states):
         return self.get_critic_output(states)
-
-    class RolloutEnums(IntEnum):
-        STATE = 0
-        ACTION = 1
-        REWARD = 2
-        NEXT_STATE = 3
-        DONE = 4
