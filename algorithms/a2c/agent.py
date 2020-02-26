@@ -36,56 +36,34 @@ class A2cAgent():
 
         for batch_index in range(0, self.number_of_batches):
 
-            values = torch.FloatTensor()
-            value_targets = torch.FloatTensor()
-            log_probs = torch.FloatTensor()
-            total_steps = 0
             self.entropy_term = 0
 
-            rollout = self.get_rollout()
+            batch_states, batch_actions, batch_rewards, batch_next_states, batch_dones = self.get_rollout()
 
-            # get log probabilities
-            log_probs = self.get_log_probs(rollout)
+            log_probs = self.get_log_probabilities_of_actions(batch_states, batch_actions)
+            values = self.get_values(batch_states)
+            value_targets = self.get_value_targets(batch_states, batch_rewards, batch_dones)
 
-            # get value function output
+            self.update(value_targets, values, log_probs)
 
-            # get value targets
-            value_targets = self.get_value_targets(rollout)
-            
-            '''
-            
-            
-            
-
-            start_state = self.env.reset()
-            trajectory_results = self.iterate_through_single_trajectory(
-                start_state)
-            current_value_targets = self.get_value_targets(trajectory_results)
-
-            values = torch.cat((torch.cat(trajectory_results.values), values), 0)
-            value_targets = torch.cat((torch.FloatTensor(current_value_targets), value_targets), 0)
-            log_probs = torch.cat((torch.stack(trajectory_results.log_probs), log_probs), 0)
-
-            number_of_steps = len(trajectory_results.values)
-
-            total_steps = total_steps + number_of_steps
-            #all_lengths.append(number_of_steps)
-            #all_rewards.append(sum(trajectory_results.rewards))
-            #all_advantages.append(sum(current_value_targets - torch.cat(trajectory_results.values)))
-            rewards_buffer.append(sum(trajectory_results.rewards))
 
             if (batch_index % 100 == 0):
-                average_rewards.append(statistics.mean(rewards_buffer))
+                if (True in batch_dones):
+                    first_done = batch_dones.index(True)
+                else:
+                    first_done = len(batch_dones)
+
+                single_trajectory_rewards = batch_rewards[:first_done]
+                average_rewards.append(sum(single_trajectory_rewards))
+
                 print("At " + str(batch_index) + "th episode, the last 100 episodes had an average total return of ")
                 print(average_rewards[-1])
                 rewards_buffer = []
 
 
-            self.update(value_targets, values, log_probs)
-            
-            '''
 
         plotter = Plotter()
+        plotter.add_variable(average_rewards, "average reward every 100 trajectories")
         plotter.add_variable(average_rewards, "average reward every 100 trajectories")
         plotter.plot()
 
@@ -104,55 +82,37 @@ class A2cAgent():
         critic_loss.backward()
         self.critic_optimizer.step()
 
-    def iterate_through_single_trajectory(self, start_state):
-        values = []
-        rewards = []
-        log_probs = []
-        final_return = 0
-        done = False
-
-        current_state = start_state
-        for step_counter in range(0,self.t_max):
-            action, policy_dist, value = self.get_models_output(current_state)
-            current_state, reward, done, _ = self.env.step(action)
-
-            rewards.append(reward)
-            values.append(value.squeeze(0))
-            log_probs.append(torch.log(policy_dist.squeeze(0)[action]))
-
-            if (done):
-                break
-
-        if (not done):
-            _, _, final_return = self.get_models_output(current_state)
-
-        return A2cAgent.TrajectoryResults(values, rewards, log_probs, final_return, done)
 
     def get_rollout(self):
         #TODO: implement multi-worker version of this
-        rollout = []
+        states = []
+        actions = []
+        rewards = []
+        next_states = []
+        dones = []
+
+
         current_state = self.env.reset()
         for step_counter in range(0, self.t_max):
             action = self.get_action_from_actor(current_state)
             next_state, reward, done, _ = self.env.step(action)
 
-            rollout.append([current_state, action, reward, next_state, done])
+            states.append(current_state)
+            actions.append(action)
+            rewards.append(reward)
+            next_states.append(next_state)
+            dones.append(done)
 
             if (done):
                 current_state = self.env.reset()
             else:
                 current_state = next_state
 
+        return states, actions, rewards, next_states, dones
+
 
     def get_action(self, policy_dist):
         return np.random.choice(self.env.action_space.n, p=policy_dist.detach().numpy().squeeze(0))
-
-    def get_models_output(self, state):
-        state = Variable(torch.from_numpy(state).float().unsqueeze(0))
-        policy_dist = self.actor_model.forward(state)
-        value = self.critic_model.forward(state)
-
-        return self.get_action(policy_dist), policy_dist, value
 
     def get_actor_output(self, state):
         state = Variable(torch.from_numpy(state).float().unsqueeze(0))
@@ -169,47 +129,43 @@ class A2cAgent():
         return value
 
 
-    def get_value_targets(self, rollout):
-        number_of_timesteps = len(rollout)
+    def get_value_targets(self, states, rewards, dones):
+        number_of_timesteps = len(states)
         value_targets = torch.zeros(number_of_timesteps)
 
-        previous_reward = 0
+        previous_reward = None
         for j in range(number_of_timesteps - 1, -1, -1):
-            current_rollout = rollout[j]
-            if (current_rollout[int(self.RolloutIteration.DONE)]):
-                previous_reward = self.get_critic_output(current_rollout[int(self.RolloutIteration.STATE)])
+            if (dones[j] or (j == number_of_timesteps - 1)):
+                previous_reward = self.get_critic_output(states[j])
 
-            current_reward = current_rollout[int(self.RolloutIteration.REWARD)]
+            current_reward = rewards[j]
             value_targets[j] = previous_reward * self.discount_factor + current_reward
 
             previous_reward = current_reward
 
         return value_targets
 
-    def get_log_probs(self, rollout):
-        number_of_timesteps = len(rollout)
-        log_probs = []
+    def get_log_probabilities_of_actions(self, states, actions):
+        number_of_timesteps = len(states)
+        log_probs = torch.zeros(number_of_timesteps)
 
         for j in range(0, number_of_timesteps):
-            policy_distribution = self.get_actor_output(rollout[j][int(self.RolloutIteration.STATE)])
-            log_probs[j] = torch.log(policy_distribution.squeeze(0)[int(self.RolloutIteration.ACTION)])
+            policy_distribution = self.get_actor_output(states[j])
+            log_probs[j] = torch.log(policy_distribution.squeeze(0)[actions[j]])
 
         return log_probs
 
+    def get_values(self, states):
+        number_of_timesteps = len(states)
+        values = torch.zeros(number_of_timesteps)
+
+        for j in range(0, number_of_timesteps):
+            values[j] = self.get_critic_output(states[j])
+
+        return values
 
 
-
-
-
-    class TrajectoryResults():
-        def __init__(self, values, rewards, log_probs, final_return, done):
-            self.values = values
-            self.rewards = rewards
-            self.log_probs = log_probs
-            self.final_return = final_return
-            self.done = done
-
-    class RolloutIteration(IntEnum):
+    class RolloutEnums(IntEnum):
         STATE = 0
         ACTION = 1
         REWARD = 2
