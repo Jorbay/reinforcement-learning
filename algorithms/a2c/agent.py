@@ -5,6 +5,7 @@ from models import Actor, Critic
 from plotter import Plotter
 import torch.optim as optim
 import gym
+import time
 
 class A2cAgent():
 
@@ -21,6 +22,7 @@ class A2cAgent():
         self.discount_factor = discount_factor
         self.entropy_constant = entropy_constant
         self.minimum_batch_size = minimum_batch_size
+        self.log_interval = 100
 
         self.actor_model = Actor(self.env.observation_space.shape[0], self.env.action_space.n)
         self.critic_model = Critic(self.env.observation_space.shape[0])
@@ -33,6 +35,7 @@ class A2cAgent():
         sampled_total_rewards = []
         sampled_episode_lengths = []
         sampled_advantages = []
+        start_time = time.time()
 
         for batch_index in range(0, self.number_of_batches):
 
@@ -47,7 +50,7 @@ class A2cAgent():
             self.update(value_targets, values, log_probs)
 
 
-            if (batch_index % 100 == 0):
+            if (batch_index % self.log_interval == 0):
                 if (True in batch_dones):
                     first_done = batch_dones.index(True)
                 else:
@@ -57,11 +60,18 @@ class A2cAgent():
 
                 total_advantage = torch.mean(value_targets - values).item()
 
+                timesteps_since_beginning = self.t_max*(1+batch_index)
+                time_since_beginning = time.time() - start_time
+                frames_per_second = timesteps_since_beginning / time_since_beginning
+
 
                 print("At " + str(batch_index) + "th episode, the last 100 episodes had an average total return of ")
                 print(sum(single_trajectory_rewards))
                 print("Length of episode was", first_done)
                 print("Mean of advantage in episode was", total_advantage)
+                print("Timesteps since starting is ", timesteps_since_beginning)
+                print("frames per second is ", frames_per_second)
+
 
                 sampled_total_rewards.append(sum(single_trajectory_rewards))
                 sampled_episode_lengths.append(first_done)
@@ -138,7 +148,6 @@ class A2cAgent():
         value = self.critic_model.forward(states)
 
         return value
-
 
     def get_value_targets(self, next_states, rewards, dones):
         number_of_timesteps = len(next_states)
