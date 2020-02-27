@@ -30,7 +30,9 @@ class A2cAgent():
 
     def train(self):
         rewards_buffer = []
-        average_rewards = []
+        sampled_total_rewards = []
+        sampled_episode_lengths = []
+        sampled_advantages = []
 
         for batch_index in range(0, self.number_of_batches):
 
@@ -40,7 +42,7 @@ class A2cAgent():
 
             log_probs = self.get_log_probabilities_of_actions(batch_states, batch_actions)
             values = self.get_values(batch_states)
-            value_targets = self.get_value_targets(batch_states, batch_rewards, batch_dones)
+            value_targets = self.get_value_targets(batch_next_states, batch_rewards, batch_dones)
 
             self.update(value_targets, values, log_probs)
 
@@ -52,17 +54,27 @@ class A2cAgent():
                     first_done = len(batch_dones)
 
                 single_trajectory_rewards = batch_rewards[:first_done]
-                average_rewards.append(sum(single_trajectory_rewards))
+
+                total_advantage = torch.mean(value_targets - values).item()
+
 
                 print("At " + str(batch_index) + "th episode, the last 100 episodes had an average total return of ")
-                print(average_rewards[-1])
+                print(sum(single_trajectory_rewards))
+                print("Length of episode was", first_done)
+                print("Mean of advantage in episode was", total_advantage)
+
+                sampled_total_rewards.append(sum(single_trajectory_rewards))
+                sampled_episode_lengths.append(first_done)
+                sampled_advantages.append(total_advantage)
+
                 rewards_buffer = []
 
 
 
         plotter = Plotter()
-        plotter.add_variable(average_rewards, "average reward every 100 trajectories")
-        plotter.add_variable(average_rewards, "average reward every 100 trajectories")
+        plotter.add_variable(sampled_total_rewards, "total reward every 100 trajectories")
+        plotter.add_variable(sampled_episode_lengths, "length every 100 trajectories")
+        plotter.add_variable(sampled_advantages, "average advantage of episode every 100 trajectories")
         plotter.plot()
 
 
@@ -128,14 +140,14 @@ class A2cAgent():
         return value
 
 
-    def get_value_targets(self, states, rewards, dones):
-        number_of_timesteps = len(states)
+    def get_value_targets(self, next_states, rewards, dones):
+        number_of_timesteps = len(next_states)
         value_targets = torch.zeros(number_of_timesteps)
 
-        previous_reward = None
+        previous_reward = self.get_critic_output(np.expand_dims(next_states[-1], axis=0))
         for j in range(number_of_timesteps - 1, -1, -1):
-            if (dones[j] or (j == number_of_timesteps - 1)):
-                previous_reward = self.get_critic_output(np.expand_dims(states[j], axis=0))
+            if (dones[j]):
+                previous_reward = 0
 
             current_reward = rewards[j]
             value_targets[j] = previous_reward * self.discount_factor + current_reward
